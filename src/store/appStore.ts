@@ -9,6 +9,7 @@ import type {
   Consultant,
   Doctor,
   CouponType,
+  ModificationRecord,
 } from '@/types';
 import {
   mockCustomers,
@@ -57,6 +58,20 @@ function addDays(dateStr: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+function isInRange(dateStr: string, period: 'day' | 'week' | 'month'): boolean {
+  const d = new Date(dateStr);
+  const now = new Date();
+  if (period === 'day') {
+    return d.toDateString() === now.toDateString();
+  }
+  if (period === 'week') {
+    const weekAgo = new Date(now);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    return d >= weekAgo && d <= now;
+  }
+  return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+}
+
 interface AppState {
   consultant: Consultant;
   customers: Customer[];
@@ -93,6 +108,12 @@ interface AppState {
   getMonthlyStats: () => { verifyCount: number; consumeAmount: number; repurchaseRate: number; refundRisk: number };
   resetCouponSelection: () => void;
   resubmitVerifyOrder: (orderId: string, updates: Partial<VerifyOrder>) => void;
+  markOrderReturnVisit: (orderId: string) => void;
+  getVerifyDetails: (period: 'day' | 'week' | 'month') => VerifyOrder[];
+  getActiveRefundRiskAmount: () => number;
+  getActiveRefundRiskCount: () => number;
+  getActiveFollowUpCount: () => number;
+  getActiveNoVerifyCount: () => number;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -156,7 +177,11 @@ export const useAppStore = create<AppState>((set, get) => ({
               doctorConfirmTime: status === 'success' || status === 'failed'
                 ? new Date().toISOString().replace('T', ' ').slice(0, 19)
                 : order.doctorConfirmTime,
-              rejectReason: options?.rejectReason,
+              rejectReason: status === 'failed'
+                ? options?.rejectReason || order.rejectReason
+                : status === 'success'
+                ? undefined
+                : order.rejectReason,
             }
           : order
       ),
@@ -164,17 +189,46 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   resubmitVerifyOrder: (orderId, updates) =>
     set((state) => ({
+      verifyOrders: state.verifyOrders.map((order) => {
+        if (order.id !== orderId) return order;
+
+        const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+        const history: ModificationRecord[] = order.modificationHistory ? [...order.modificationHistory] : [];
+
+        if (updates.treatmentParts) {
+          history.push({
+            time: now,
+            field: 'treatmentParts',
+            oldValue: order.treatmentParts.join('、'),
+            newValue: updates.treatmentParts.join('、'),
+            rejectReason: order.rejectReason || '',
+          });
+        }
+        if (updates.dosageRange) {
+          history.push({
+            time: now,
+            field: 'dosageRange',
+            oldValue: order.dosageRange,
+            newValue: updates.dosageRange,
+            rejectReason: order.rejectReason || '',
+          });
+        }
+
+        return {
+          ...order,
+          ...updates,
+          status: 'pending_doctor' as const,
+          doctorSignature: undefined,
+          doctorConfirmTime: undefined,
+          modificationHistory: history,
+        };
+      }),
+    })),
+
+  markOrderReturnVisit: (orderId) =>
+    set((state) => ({
       verifyOrders: state.verifyOrders.map((order) =>
-        order.id === orderId
-          ? {
-              ...order,
-              ...updates,
-              status: 'pending_doctor' as const,
-              doctorSignature: undefined,
-              doctorConfirmTime: undefined,
-              rejectReason: undefined,
-            }
-          : order
+        order.id === orderId ? { ...order, returnVisitGenerated: true } : order
       ),
     })),
 
@@ -255,17 +309,41 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().verifyOrders.filter((o) => o.status === 'pending_doctor').length,
 
   getPendingFollowUpCount: () =>
-    get().followUpItems.filter((f) => f.status === 'pending').length,
+    get().followUpItems.filter((f) => f.status !== 'done').length,
 
   getMonthlyStats: () => {
     const { dailyPerformance, followUpItems } = get();
     const verifyCount = dailyPerformance.reduce((sum, d) => sum + d.verifyCount, 0);
     const consumeAmount = dailyPerformance.reduce((sum, d) => sum + d.consumeAmount, 0);
     const refundRisk = followUpItems
-      .filter((f) => f.type === 'refund_risk' && f.refundAmount)
+      .filter((f) => f.type === 'refund_risk' && f.status !== 'done' && f.refundAmount)
       .reduce((sum, f) => sum + (f.refundAmount || 0), 0);
     const repurchaseRate = 68;
 
     return { verifyCount, consumeAmount, repurchaseRate, refundRisk };
+  },
+
+  getVerifyDetails: (period) => {
+    return get().verifyOrders.filter(
+      (o) => o.status === 'success' && isInRange(o.createTime, period)
+    );
+  },
+
+  getActiveRefundRiskAmount: () => {
+    return get().followUpItems
+      .filter((f) => f.type === 'refund_risk' && f.status !== 'done' && f.refundAmount)
+      .reduce((sum, f) => sum + (f.refundAmount || 0), 0);
+  },
+
+  getActiveRefundRiskCount: () => {
+    return get().followUpItems.filter((f) => f.type === 'refund_risk' && f.status !== 'done').length;
+  },
+
+  getActiveFollowUpCount: () => {
+    return get().followUpItems.filter((f) => f.status !== 'done').length;
+  },
+
+  getActiveNoVerifyCount: () => {
+    return get().followUpItems.filter((f) => f.type === 'no_verify' && f.status !== 'done').length;
   },
 }));

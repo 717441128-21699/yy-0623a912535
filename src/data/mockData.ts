@@ -189,6 +189,7 @@ export const mockVerifyOrders: VerifyOrder[] = [
     customerName: '刘梓萱',
     couponId: 'cp008',
     couponName: '乔雅登雅致玻尿酸1ml',
+    couponFaceValue: 6800,
     consultantId: 'c001',
     consultantName: '林晓雨',
     createTime: '2026-06-22 09:30:00',
@@ -206,6 +207,7 @@ export const mockVerifyOrders: VerifyOrder[] = [
     customerName: '赵雅婷',
     couponId: 'cp009',
     couponName: '光子嫩肤单次券',
+    couponFaceValue: 1500,
     consultantId: 'c001',
     consultantName: '林晓雨',
     createTime: '2026-06-22 10:15:00',
@@ -223,6 +225,7 @@ export const mockVerifyOrders: VerifyOrder[] = [
     customerName: '张梦瑶',
     couponId: 'cp010',
     couponName: '小气泡清洁护理',
+    couponFaceValue: 398,
     consultantId: 'c001',
     consultantName: '林晓雨',
     createTime: '2026-06-22 08:45:00',
@@ -234,6 +237,7 @@ export const mockVerifyOrders: VerifyOrder[] = [
     status: 'success',
     needDoctorConfirm: false,
     doctorConfirmTime: '2026-06-22 08:50:00',
+    returnVisitGenerated: true,
   },
 ];
 

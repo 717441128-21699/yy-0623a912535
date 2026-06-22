@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import {
   BarChart3, Wallet, Users, TrendingUp,
-  Calendar, ChevronDown, Ticket, ArrowRight
+  Calendar, ChevronDown, Ticket, ArrowRight,
+  FileText, X, CheckCircle2, Clock, Sparkles,
 } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis,
@@ -15,9 +16,16 @@ import { useAppStore } from '../store/appStore';
 type Period = 'day' | 'week' | 'month';
 
 export default function Performance() {
-  const { consultant, dailyPerformance, projectConsumption, verifyOrders } = useAppStore();
+  const {
+    consultant, dailyPerformance, projectConsumption,
+    verifyOrders, getMonthlyStats, getVerifyDetails,
+    getActiveRefundRiskAmount, getActiveRefundRiskCount,
+    getActiveFollowUpCount,
+  } = useAppStore();
   const [period, setPeriod] = useState<Period>('month');
   const [showPeriodPicker, setShowPeriodPicker] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [detailPeriod, setDetailPeriod] = useState<Period>('day');
 
   const periodLabels: Record<Period, string> = {
     day: '今日',
@@ -25,12 +33,18 @@ export default function Performance() {
     month: '本月',
   };
 
+  const stats = getMonthlyStats();
   const totalVerifyCount = dailyPerformance.reduce((sum, d) => sum + d.verifyCount, 0);
   const totalConsumeAmount = dailyPerformance.reduce((sum, d) => sum + d.consumeAmount, 0);
   const avgOrderValue = totalVerifyCount > 0 ? Math.round(totalConsumeAmount / totalVerifyCount) : 0;
   const repurchaseRate = 68;
 
   const recentOrders = verifyOrders.filter((o) => o.status === 'success').slice(0, 5);
+  const detailOrders = getVerifyDetails(detailPeriod);
+
+  const detailTotal = detailOrders.reduce((sum, o) => sum + o.couponFaceValue + o.priceDifference, 0);
+  const detailFaceValue = detailOrders.reduce((sum, o) => sum + o.couponFaceValue, 0);
+  const detailPriceDiff = detailOrders.reduce((sum, o) => sum + o.priceDifference, 0);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white pb-24">
@@ -127,8 +141,9 @@ export default function Performance() {
           />
           <StatCard
             label="退款风险"
-            value={29800}
+            value={stats.refundRisk}
             prefix="¥"
+            trend={getActiveRefundRiskCount() > 0 ? -1 : 0}
             gradient="bg-gradient-to-br from-rose-500 to-pink-600"
             icon={<BarChart3 className="w-5 h-5" />}
           />
@@ -227,13 +242,43 @@ export default function Performance() {
           </div>
         </div>
 
+        <div
+          onClick={() => setShowDetailModal(true)}
+          className="p-4 bg-white rounded-2xl shadow-card cursor-pointer hover:shadow-lg transition-all active:scale-[0.99]"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+              <FileText className="w-4 h-4 text-brand-purple" />
+              核销明细对账
+            </h3>
+            <ArrowRight className="w-4 h-4 text-gray-400" />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="text-center p-2.5 bg-purple-50 rounded-xl">
+              <div className="text-sm font-bold text-brand-purple">{verifyOrders.filter((o) => o.status === 'success').length}</div>
+              <div className="text-[10px] text-gray-500 mt-0.5">总核销笔数</div>
+            </div>
+            <div className="text-center p-2.5 bg-amber-50 rounded-xl">
+              <div className="text-sm font-bold text-amber-600">{verifyOrders.filter((o) => o.priceDifference > 0 && o.status === 'success').length}</div>
+              <div className="text-[10px] text-gray-500 mt-0.5">含补差价</div>
+            </div>
+            <div className="text-center p-2.5 bg-emerald-50 rounded-xl">
+              <div className="text-sm font-bold text-emerald-600">{verifyOrders.filter((o) => o.returnVisitGenerated).length}</div>
+              <div className="text-[10px] text-gray-500 mt-0.5">已生成复诊</div>
+            </div>
+          </div>
+        </div>
+
         <div className="p-4 bg-white rounded-2xl shadow-card">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
               <Ticket className="w-4 h-4 text-brand-purple" />
               最近核销
             </h3>
-            <button className="text-xs text-brand-purple font-medium flex items-center gap-0.5">
+            <button
+              onClick={() => setShowDetailModal(true)}
+              className="text-xs text-brand-purple font-medium flex items-center gap-0.5"
+            >
               查看全部 <ArrowRight className="w-3 h-3" />
             </button>
           </div>
@@ -254,13 +299,140 @@ export default function Performance() {
                       {order.customerName} · {order.createTime.slice(5, 16)}
                     </div>
                   </div>
-                  <div className="text-sm font-semibold text-brand-purple">已核销</div>
+                  <div className="text-right">
+                    <div className="text-sm font-semibold text-brand-purple">
+                      ¥{(order.couponFaceValue + order.priceDifference).toLocaleString()}
+                    </div>
+                    {order.priceDifference > 0 && (
+                      <div className="text-[10px] text-amber-500">
+                        含补差 ¥{order.priceDifference}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))
             )}
           </div>
         </div>
       </div>
+
+      {showDetailModal && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowDetailModal(false)} />
+          <div className="relative w-full max-w-[480px] bg-white rounded-t-3xl max-h-[85vh] flex flex-col animate-[fadeInUp_0.3s_ease-out]">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
+              <h3 className="text-base font-bold text-gray-900">核销明细对账</h3>
+              <button
+                onClick={() => setShowDetailModal(false)}
+                className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center"
+              >
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="flex gap-2 px-4 pt-3 flex-shrink-0">
+              {(Object.keys(periodLabels) as Period[]).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setDetailPeriod(p)}
+                  className={`flex-1 h-9 rounded-xl text-sm font-medium transition-all ${
+                    detailPeriod === p
+                      ? 'bg-gradient-to-r from-brand-purple to-brand-pink text-white shadow-md'
+                      : 'bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  {periodLabels[p]}
+                </button>
+              ))}
+            </div>
+
+            <div className="px-4 py-3 flex-shrink-0">
+              <div className="p-3 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl">
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <div className="text-sm font-bold text-brand-purple">¥{detailTotal.toLocaleString()}</div>
+                    <div className="text-[10px] text-gray-500">核销总额</div>
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-gray-700">¥{detailFaceValue.toLocaleString()}</div>
+                    <div className="text-[10px] text-gray-500">卡券面额</div>
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-amber-600">¥{detailPriceDiff.toLocaleString()}</div>
+                    <div className="text-[10px] text-gray-500">补差价</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-2.5">
+              {detailOrders.length === 0 ? (
+                <div className="py-12 text-center">
+                  <FileText className="w-10 h-10 mx-auto text-gray-200 mb-2" />
+                  <p className="text-sm text-gray-400">{periodLabels[detailPeriod]}暂无核销记录</p>
+                </div>
+              ) : (
+                detailOrders.map((order) => (
+                  <div key={order.id} className="p-3.5 bg-white rounded-xl border border-gray-100">
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <div className="text-sm font-semibold text-gray-900">{order.customerName}</div>
+                        <div className="text-xs text-gray-500 mt-0.5">{order.createTime.slice(5, 16)}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-bold text-brand-purple">
+                          ¥{(order.couponFaceValue + order.priceDifference).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-gray-600 mb-2">{order.couponName}</div>
+
+                    <div className="space-y-1 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-400">卡券面额</span>
+                        <span className="text-gray-700">¥{order.couponFaceValue.toLocaleString()}</span>
+                      </div>
+                      {order.priceDifference > 0 && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-400">补差价</span>
+                          <span className="text-amber-600">¥{order.priceDifference.toLocaleString()}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-400">确认来源</span>
+                        <span className={order.needDoctorConfirm ? 'text-purple-600' : 'text-gray-600'}>
+                          {order.needDoctorConfirm ? '医生确认' : '直接核销'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 pt-2 border-t border-gray-50 flex items-center gap-2">
+                      {order.returnVisitGenerated ? (
+                        <span className="flex items-center gap-1 text-[10px] text-emerald-500">
+                          <CheckCircle2 className="w-3 h-3" />
+                          复诊已生成
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-[10px] text-gray-400">
+                          <Clock className="w-3 h-3" />
+                          复诊未生成
+                        </span>
+                      )}
+                      {order.batchId && (
+                        <span className="flex items-center gap-1 text-[10px] text-purple-400 ml-auto">
+                          <Sparkles className="w-3 h-3" />
+                          组合核销
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <TabBar />
     </div>

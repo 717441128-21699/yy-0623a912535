@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, X, Clock, MapPin, Calendar, User } from 'lucide-react';
+import { Search, X, Clock, MapPin, Calendar, User, AlertTriangle, Bell } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import CustomerCard from '../components/CustomerCard';
 import TabBar from '../components/TabBar';
@@ -8,9 +8,18 @@ import { useAppStore } from '../store/appStore';
 
 export default function CustomerSearch() {
   const navigate = useNavigate();
-  const { searchKeyword, setSearchKeyword, getFilteredCustomers, consultant } = useAppStore();
+  const {
+    searchKeyword, setSearchKeyword, getFilteredCustomers, consultant,
+    getPendingVerifyCount, getActiveFollowUpCount, getActiveRefundRiskCount,
+    getActiveNoVerifyCount,
+  } = useAppStore();
   const [isFocused, setIsFocused] = useState(false);
   const filteredCustomers = getFilteredCustomers();
+
+  const pendingDoctorCount = getPendingVerifyCount();
+  const pendingFollowCount = getActiveFollowUpCount();
+  const refundRiskCount = getActiveRefundRiskCount();
+  const noVerifyCount = getActiveNoVerifyCount();
 
   const handleCustomerClick = (customerId: string) => {
     navigate(`/coupons/${customerId}`);
@@ -22,6 +31,8 @@ export default function CustomerSearch() {
     weekday: 'long',
   });
 
+  const hasReminders = pendingDoctorCount > 0 || refundRiskCount > 0 || noVerifyCount > 0;
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white pb-24">
       <PageHeader
@@ -29,6 +40,17 @@ export default function CustomerSearch() {
         subtitle={todayStr}
         rightSlot={
           <div className="flex items-center gap-2">
+            {hasReminders && (
+              <button
+                onClick={() => navigate('/follow-up')}
+                className="relative w-9 h-9 rounded-full bg-white flex items-center justify-center shadow-sm"
+              >
+                <Bell className="w-4.5 h-4.5 text-gray-600" />
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-danger text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                  {pendingDoctorCount + refundRiskCount + noVerifyCount}
+                </span>
+              </button>
+            )}
             <img
               src={consultant.avatar}
               alt={consultant.name}
@@ -83,6 +105,68 @@ export default function CustomerSearch() {
             <div className="text-[11px] opacity-80">已核销</div>
           </div>
         </div>
+
+        {hasReminders && (
+          <div className="space-y-2">
+            <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              待处理提醒
+            </h2>
+            <div className="space-y-2">
+              {pendingDoctorCount > 0 && (
+                <button
+                  onClick={() => navigate('/orders')}
+                  className="w-full flex items-center gap-3 p-3 bg-amber-50 rounded-xl border border-amber-200 text-left hover:bg-amber-100 transition-colors"
+                >
+                  <div className="w-9 h-9 rounded-full bg-amber-500 flex items-center justify-center flex-shrink-0">
+                    <Clock className="w-4.5 h-4.5 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-amber-800">待医生确认</div>
+                    <div className="text-xs text-amber-600">{pendingDoctorCount} 单待确认</div>
+                  </div>
+                  <span className="px-2.5 py-1 bg-amber-500 text-white text-xs font-bold rounded-full">
+                    {pendingDoctorCount}
+                  </span>
+                </button>
+              )}
+              {refundRiskCount > 0 && (
+                <button
+                  onClick={() => navigate('/follow-up')}
+                  className="w-full flex items-center gap-3 p-3 bg-red-50 rounded-xl border border-red-200 text-left hover:bg-red-100 transition-colors"
+                >
+                  <div className="w-9 h-9 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0">
+                    <AlertTriangle className="w-4.5 h-4.5 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-red-800">退款风险预警</div>
+                    <div className="text-xs text-red-600">{refundRiskCount} 位顾客需关注</div>
+                  </div>
+                  <span className="px-2.5 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
+                    {refundRiskCount}
+                  </span>
+                </button>
+              )}
+              {noVerifyCount > 0 && (
+                <button
+                  onClick={() => navigate('/follow-up')}
+                  className="w-full flex items-center gap-3 p-3 bg-purple-50 rounded-xl border border-purple-200 text-left hover:bg-purple-100 transition-colors"
+                >
+                  <div className="w-9 h-9 rounded-full bg-purple-500 flex items-center justify-center flex-shrink-0">
+                    <MapPin className="w-4.5 h-4.5 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-purple-800">到院未核销</div>
+                    <div className="text-xs text-purple-600">{noVerifyCount} 位顾客待核销</div>
+                  </div>
+                  <span className="px-2.5 py-1 bg-purple-500 text-white text-xs font-bold rounded-full">
+                    {noVerifyCount}
+                  </span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="space-y-3">
           <div className="flex items-center justify-between">

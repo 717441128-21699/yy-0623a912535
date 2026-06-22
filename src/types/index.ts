@@ -36,12 +36,22 @@ export interface Doctor {
   title: string;
 }
 
+export interface ModificationRecord {
+  time: string;
+  field: 'treatmentParts' | 'dosageRange';
+  oldValue: string;
+  newValue: string;
+  rejectReason: string;
+}
+
 export interface VerifyOrder {
   id: string;
+  batchId?: string;
   customerId: string;
   customerName: string;
   couponId: string;
   couponName: string;
+  couponFaceValue: number;
   consultantId: string;
   consultantName: string;
   createTime: string;
@@ -58,6 +68,8 @@ export interface VerifyOrder {
   doctorSignature?: string;
   doctorConfirmTime?: string;
   rejectReason?: string;
+  returnVisitGenerated?: boolean;
+  modificationHistory?: ModificationRecord[];
 }
 
 export interface FollowUpItem {

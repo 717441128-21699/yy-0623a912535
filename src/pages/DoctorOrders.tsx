@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Clock, CheckCircle, XCircle, MapPin, Syringe,
   Stethoscope, User, ChevronRight, AlertCircle,
-  RotateCcw, FileText, Calendar,
+  RotateCcw, FileText, Calendar, Sparkles, History,
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SignaturePad from '../components/SignaturePad';
@@ -44,6 +44,7 @@ export default function DoctorOrders() {
     generateReturnVisit,
     addFollowUpItem,
     resubmitVerifyOrder,
+    markOrderReturnVisit,
     coupons,
     customers,
   } = useAppStore();
@@ -55,6 +56,8 @@ export default function DoctorOrders() {
   const [resubmitMode, setResubmitMode] = useState(false);
   const [editParts, setEditParts] = useState<string[]>([]);
   const [editDosage, setEditDosage] = useState('');
+  const [confirmSuccessId, setConfirmSuccessId] = useState<string | null>(null);
+  const [confirmReturnVisitId, setConfirmReturnVisitId] = useState<string | null>(null);
 
   const tabs: { key: TabKey; label: string }[] = [
     { key: 'pending', label: '待确认' },
@@ -85,12 +88,13 @@ export default function DoctorOrders() {
       const returnVisit = generateReturnVisit(coupon.id, selectedOrder.customerId);
       if (returnVisit) {
         addFollowUpItem(returnVisit);
+        setConfirmReturnVisitId(returnVisit.id);
       }
     }
 
-    setSelectedOrder(null);
+    markOrderReturnVisit(selectedOrder.id);
+    setConfirmSuccessId(selectedOrder.id);
     setDoctorSignature('');
-    setActiveTab('confirmed');
   };
 
   const handleReject = () => {
@@ -122,13 +126,17 @@ export default function DoctorOrders() {
     setActiveTab('pending');
   };
 
+  const handleViewReturnVisit = () => {
+    navigate('/follow-up', { state: { highlightId: confirmReturnVisitId, highlightType: 'return_visit' } });
+  };
+
   const toggleEditPart = (part: string) => {
     setEditParts((prev) =>
       prev.includes(part) ? prev.filter((p) => p !== part) : [...prev, part]
     );
   };
 
-  const treatmentParts = [
+  const treatmentPartsList = [
     '额头', '眉骨', '眼周', '泪沟', '苹果肌',
     '鼻唇沟', '脸颊', '下颌线', '下巴', '颈部',
     '全面部', 'T区', '鼻翼', '口周',
@@ -136,6 +144,57 @@ export default function DoctorOrders() {
   const dosageOptions = [
     '标准剂量', '0.5ml以下', '0.5-1.0ml', '1.0-1.5ml', '1.5-2.0ml', '2.0ml以上',
   ];
+
+  if (confirmSuccessId && selectedOrder) {
+    const order = verifyOrders.find((o) => o.id === confirmSuccessId);
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white flex flex-col items-center justify-center px-6">
+        <div className="animate-[scaleIn_0.5s_ease-out] text-center w-full max-w-sm">
+          <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-lg">
+            <CheckCircle className="w-12 h-12 text-white" strokeWidth={2.5} />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">医嘱确认成功</h2>
+          <p className="text-sm text-gray-500 mb-1">
+            顾客 {order?.customerName} 的核销单已确认通过
+          </p>
+          <p className="text-sm text-gray-500 mb-4">
+            卡券已正式核销，业绩数据已同步更新
+          </p>
+
+          <div className="my-5 p-4 bg-emerald-50 rounded-2xl text-left">
+            <div className="flex items-center gap-2 mb-2">
+              <Sparkles className="w-4 h-4 text-emerald-600" />
+              <span className="text-sm font-semibold text-emerald-800">复诊建议已生成</span>
+            </div>
+            <p className="text-xs text-emerald-700 leading-relaxed">
+              根据核销项目类型，已自动生成复诊建议，可前往跟进页面查看
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <button
+              onClick={handleViewReturnVisit}
+              className="w-full h-12 bg-gradient-to-r from-brand-purple to-brand-pink text-white font-semibold rounded-2xl shadow-lg flex items-center justify-center gap-2"
+            >
+              <Calendar className="w-4 h-4" />
+              查看复诊建议
+            </button>
+            <button
+              onClick={() => {
+                setConfirmSuccessId(null);
+                setConfirmReturnVisitId(null);
+                setSelectedOrder(null);
+                setActiveTab('confirmed');
+              }}
+              className="w-full h-12 bg-white text-gray-700 font-semibold rounded-2xl border border-gray-200"
+            >
+              继续确认其他
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (selectedOrder && resubmitMode) {
     return (
@@ -178,13 +237,42 @@ export default function DoctorOrders() {
             </div>
           </div>
 
+          {selectedOrder.modificationHistory && selectedOrder.modificationHistory.length > 0 && (
+            <div className="p-4 bg-white rounded-2xl shadow-card">
+              <div className="flex items-center gap-2 mb-3">
+                <History className="w-4 h-4 text-brand-purple" />
+                <span className="text-sm font-semibold text-gray-900">修改记录</span>
+              </div>
+              <div className="space-y-3">
+                {selectedOrder.modificationHistory.map((record, idx) => (
+                  <div key={idx} className="p-3 bg-gray-50 rounded-xl space-y-1.5">
+                    <div className="flex items-center justify-between text-[10px] text-gray-400">
+                      <span>{record.field === 'treatmentParts' ? '治疗部位' : '剂量区间'}</span>
+                      <span>{record.time.slice(5, 16)}</span>
+                    </div>
+                    <div className="text-xs">
+                      <span className="text-red-500 line-through">{record.oldValue}</span>
+                      <span className="mx-1.5 text-gray-300">→</span>
+                      <span className="text-emerald-600">{record.newValue}</span>
+                    </div>
+                    {record.rejectReason && (
+                      <div className="text-[10px] text-gray-500 mt-1">
+                        驳回原因：{record.rejectReason}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="p-4 bg-white rounded-2xl shadow-card space-y-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
               <MapPin className="w-4 h-4 text-brand-purple" />
               治疗部位（修改）
             </div>
             <div className="flex flex-wrap gap-2">
-              {treatmentParts.map((part) => {
+              {treatmentPartsList.map((part) => {
                 const isSelected = editParts.includes(part);
                 return (
                   <button
@@ -305,6 +393,35 @@ export default function DoctorOrders() {
             </div>
           )}
 
+          {selectedOrder.modificationHistory && selectedOrder.modificationHistory.length > 0 && (
+            <div className="p-4 bg-white rounded-2xl shadow-card">
+              <div className="flex items-center gap-2 mb-3">
+                <History className="w-4 h-4 text-brand-purple" />
+                <span className="text-sm font-semibold text-gray-900">修改记录</span>
+              </div>
+              <div className="space-y-3">
+                {selectedOrder.modificationHistory.map((record, idx) => (
+                  <div key={idx} className="p-3 bg-gray-50 rounded-xl space-y-1.5">
+                    <div className="flex items-center justify-between text-[10px] text-gray-400">
+                      <span>{record.field === 'treatmentParts' ? '治疗部位' : '剂量区间'}</span>
+                      <span>{record.time.slice(5, 16)}</span>
+                    </div>
+                    <div className="text-xs">
+                      <span className="text-red-500 line-through">{record.oldValue}</span>
+                      <span className="mx-1.5 text-gray-300">→</span>
+                      <span className="text-emerald-600">{record.newValue}</span>
+                    </div>
+                    {record.rejectReason && (
+                      <div className="text-[10px] text-gray-500 mt-1">
+                        原因：{record.rejectReason}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="p-4 bg-white rounded-2xl shadow-card space-y-4">
             <div className="flex items-start gap-3">
               <MapPin className="w-4 h-4 text-brand-purple mt-0.5" />
@@ -335,6 +452,41 @@ export default function DoctorOrders() {
                 <div className="text-sm font-medium text-gray-900">{selectedOrder.operatingDoctor}</div>
               </div>
             </div>
+          </div>
+
+          <div className="p-4 bg-white rounded-2xl shadow-card">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-gray-500">卡券面额</span>
+              <span className="text-sm font-semibold text-brand-purple">
+                ¥{selectedOrder.couponFaceValue.toLocaleString()}
+              </span>
+            </div>
+            {selectedOrder.priceDifference > 0 && (
+              <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                <span className="text-xs text-gray-500">补差价</span>
+                <span className="text-sm font-semibold text-amber-600">
+                  ¥{selectedOrder.priceDifference.toLocaleString()}
+                </span>
+              </div>
+            )}
+            <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+              <span className="text-xs text-gray-500">核销金额</span>
+              <span className="text-sm font-bold text-gray-900">
+                ¥{(selectedOrder.couponFaceValue + selectedOrder.priceDifference).toLocaleString()}
+              </span>
+            </div>
+            {selectedOrder.needDoctorConfirm && (
+              <div className="mt-2 flex items-center gap-1 text-[10px] text-purple-500">
+                <FileText className="w-3 h-3" />
+                医生确认来源
+              </div>
+            )}
+            {selectedOrder.returnVisitGenerated && (
+              <div className="mt-2 flex items-center gap-1 text-[10px] text-emerald-500">
+                <Calendar className="w-3 h-3" />
+                复诊建议已生成
+              </div>
+            )}
           </div>
 
           {selectedOrder.priceDifference > 0 && (
@@ -542,6 +694,13 @@ export default function DoctorOrders() {
                     <div className="mt-3 p-2.5 bg-red-50 rounded-xl flex items-start gap-2">
                       <AlertCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />
                       <p className="text-xs text-red-600 line-clamp-2">{order.rejectReason}</p>
+                    </div>
+                  )}
+
+                  {order.modificationHistory && order.modificationHistory.length > 0 && (
+                    <div className="mt-2 flex items-center gap-1 text-[10px] text-purple-500">
+                      <History className="w-3 h-3" />
+                      已修改 {order.modificationHistory.length} 次
                     </div>
                   )}
                 </div>

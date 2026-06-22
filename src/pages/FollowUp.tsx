@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   AlertTriangle, ShoppingBag, Calendar, Users,
   Clock, ChevronRight, Phone, MessageCircle,
   TrendingUp, CheckCircle2, Ticket,
-  ArrowRight, XCircle, Star, Zap,
+  XCircle, Star, Zap,
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import TabBar from '../components/TabBar';
@@ -71,12 +71,42 @@ const priorityLabels: Record<number, { label: string; color: string }> = {
 
 export default function FollowUp() {
   const navigate = useNavigate();
+  const location = useLocation();
   const {
     followUpItems,
     updateFollowUpStatus,
     setSelectedCustomerId,
   } = useAppStore();
-  const [activeTab, setActiveTab] = useState<TabKey>('all');
+
+  const locationState = location.state as { highlightId?: string; highlightType?: FollowUpType } | null;
+  const [activeTab, setActiveTab] = useState<TabKey>(() => {
+    if (locationState?.highlightType) return locationState.highlightType;
+    if (locationState?.highlightId) return 'return_visit';
+    return 'all';
+  });
+  const [highlightId, setHighlightId] = useState<string | null>(
+    locationState?.highlightId || null
+  );
+  const highlightRef = useRef<HTMLDivElement>(null);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    if (highlightId && highlightRef.current) {
+      highlightRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      highlightTimerRef.current = setTimeout(() => {
+        setHighlightId(null);
+      }, 3000);
+    }
+    return () => {
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    };
+  }, [highlightId]);
+
+  useEffect(() => {
+    if (locationState?.highlightId) {
+      window.history.replaceState({}, document.title);
+    }
+  }, [locationState]);
 
   const filteredItems = followUpItems
     .filter((item) => (activeTab === 'all' ? true : item.type === activeTab))
@@ -308,21 +338,29 @@ export default function FollowUp() {
               const priority = priorityLabels[item.priority];
               const isRisk = item.type === 'refund_risk' && item.status !== 'done';
               const isDone = item.status === 'done';
+              const isHighlighted = highlightId === item.id;
 
               return (
                 <div
                   key={item.id}
+                  ref={isHighlighted ? highlightRef : undefined}
                   onClick={() => handleGoCoupons(item.customerId)}
                   style={{ animationDelay: `${index * 50}ms` }}
                   className={`animate-[fadeInUp_0.4s_ease-out_both] relative overflow-hidden rounded-2xl transition-all hover:shadow-lg cursor-pointer ${
-                    isDone
+                    isHighlighted
+                      ? 'bg-white ring-2 ring-brand-purple shadow-lg scale-[1.01]'
+                      : isDone
                       ? 'bg-gray-50 opacity-75'
                       : isRisk
                       ? 'bg-white border-2 border-red-200 shadow-md'
                       : 'bg-white shadow-card'
                   }`}
                 >
-                  {isRisk && item.priority === 1 && (
+                  {isHighlighted && (
+                    <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-brand-purple to-brand-pink animate-pulse" />
+                  )}
+
+                  {isRisk && item.priority === 1 && !isHighlighted && (
                     <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-400 via-red-500 to-red-400 animate-pulse" />
                   )}
 
@@ -402,12 +440,16 @@ export default function FollowUp() {
                     )}
 
                     {item.refundAmount !== undefined && (
-                      <div className="p-2.5 bg-red-50 rounded-xl mb-3 flex items-center justify-between">
-                        <span className="text-xs text-red-600 flex items-center gap-1">
+                      <div className={`p-2.5 rounded-xl mb-3 flex items-center justify-between ${
+                        isDone ? 'bg-gray-50' : 'bg-red-50'
+                      }`}>
+                        <span className={`text-xs flex items-center gap-1 ${
+                          isDone ? 'text-gray-500' : 'text-red-600'
+                        }`}>
                           <AlertTriangle className="w-3.5 h-3.5" />
-                          预计退款
+                          {isDone ? '原退款金额（已解决）' : '预计退款'}
                         </span>
-                        <span className="text-sm font-bold text-red-600">
+                        <span className={`text-sm font-bold ${isDone ? 'text-gray-400 line-through' : 'text-red-600'}`}>
                           ¥{item.refundAmount.toLocaleString()}
                         </span>
                       </div>

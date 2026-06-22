@@ -70,15 +70,20 @@ export default function VerifyApply() {
     if (!hasAnyCoupon) return;
 
     const selectedDoctor = doctors.find((d) => d.id === doctorId);
-    let totalAmount = 0;
+    const batchId = `b${Date.now()}`;
+    let totalFaceValue = 0;
+    let firstReturnVisitId: string | null = null;
 
-    selectedCoupons.forEach((coupon) => {
+    selectedCoupons.forEach((coupon, index) => {
+      const isFirstInBatch = index === 0;
       const order: VerifyOrder = {
         id: `v${Date.now()}${Math.random().toString(36).slice(2, 6)}`,
+        batchId,
         customerId,
         customerName: customer?.name || '',
         couponId: coupon.id,
         couponName: coupon.name,
+        couponFaceValue: coupon.faceValue,
         consultantId: consultant.id,
         consultantName: consultant.name,
         createTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
@@ -86,10 +91,10 @@ export default function VerifyApply() {
         dosageRange: dosage,
         operatingDoctor: selectedDoctor?.name || '',
         customerSignature: signature,
-        priceDifference,
-        originalProject: showUpgrade ? originalProject : undefined,
-        upgradedProject: showUpgrade ? upgradedProject : undefined,
-        paymentMethod: showUpgrade ? paymentMethod : undefined,
+        priceDifference: isFirstInBatch ? priceDifference : 0,
+        originalProject: isFirstInBatch && showUpgrade ? originalProject : undefined,
+        upgradedProject: isFirstInBatch && showUpgrade ? upgradedProject : undefined,
+        paymentMethod: isFirstInBatch && showUpgrade ? paymentMethod : undefined,
         status: needDoctorConfirm ? 'pending_doctor' : 'success',
         needDoctorConfirm,
       };
@@ -97,20 +102,22 @@ export default function VerifyApply() {
 
       if (!needDoctorConfirm) {
         decreaseCouponCount(coupon.id);
-        totalAmount += coupon.faceValue + priceDifference;
+        totalFaceValue += coupon.faceValue;
 
         const returnVisit = generateReturnVisit(coupon.id, customerId);
         if (returnVisit) {
           addFollowUpItem(returnVisit);
-          if (!returnVisitId) setReturnVisitId(returnVisit.id);
+          if (!firstReturnVisitId) firstReturnVisitId = returnVisit.id;
         }
       }
     });
 
-    if (!needDoctorConfirm && totalAmount > 0) {
+    if (!needDoctorConfirm) {
+      const totalAmount = totalFaceValue + priceDifference;
       addDailyPerformance(totalAmount, selectedCoupons.length);
     }
 
+    if (firstReturnVisitId) setReturnVisitId(firstReturnVisitId);
     setShowSuccess(true);
   };
 
@@ -122,7 +129,7 @@ export default function VerifyApply() {
     (!showUpgrade || (originalProject && upgradedProject && priceDifference > 0 && paymentMethod));
 
   const handleViewReturnVisit = () => {
-    navigate('/follow-up', { state: { highlightId: returnVisitId } });
+    navigate('/follow-up', { state: { highlightId: returnVisitId, highlightType: 'return_visit' } });
   };
 
   const handleGoSelectCoupon = () => {
@@ -153,6 +160,28 @@ export default function VerifyApply() {
               ? '已发送至操作医生进行医嘱确认'
               : '卡券已成功核销'}
           </p>
+
+          {selectedCoupons.length > 1 && !needDoctorConfirm && (
+            <div className="my-5 p-4 bg-purple-50 rounded-2xl text-left">
+              <div className="text-sm font-semibold text-purple-800 mb-2">
+                本次核销 {selectedCoupons.length} 张卡券
+              </div>
+              <div className="space-y-1.5">
+                {selectedCoupons.map((c) => (
+                  <div key={c.id} className="flex items-center justify-between text-xs">
+                    <span className="text-gray-600">{c.name}</span>
+                    <span className="text-purple-600 font-medium">¥{c.faceValue.toLocaleString()}</span>
+                  </div>
+                ))}
+                {priceDifference > 0 && (
+                  <div className="flex items-center justify-between text-xs pt-1.5 border-t border-purple-200">
+                    <span className="text-gray-600">补差价（整单）</span>
+                    <span className="text-purple-600 font-medium">¥{priceDifference.toLocaleString()}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {!needDoctorConfirm && (
             <div className="my-5 p-4 bg-emerald-50 rounded-2xl text-left">
@@ -280,6 +309,14 @@ export default function VerifyApply() {
               </div>
             </div>
           ))}
+          {selectedCoupons.length > 1 && (
+            <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-xs">
+              <span className="text-gray-500">卡券面额合计</span>
+              <span className="font-semibold text-gray-900">
+                ¥{selectedCoupons.reduce((sum, c) => sum + c.faceValue, 0).toLocaleString()}
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="p-4 bg-white rounded-2xl shadow-card space-y-4">
@@ -393,6 +430,11 @@ export default function VerifyApply() {
                 <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
                   <ArrowUpRight className="w-4 h-4 text-brand-purple" />
                   项目升级补差价
+                  {selectedCoupons.length > 1 && (
+                    <span className="text-[10px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded">
+                      整单
+                    </span>
+                  )}
                 </div>
                 <button
                   onClick={() => {
@@ -430,7 +472,7 @@ export default function VerifyApply() {
                 </div>
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1.5 block">补差价金额</label>
+                <label className="text-xs text-gray-500 mb-1.5 block">补差价金额（整单）</label>
                 <div className="flex items-center h-10 bg-gray-50 rounded-xl overflow-hidden">
                   <button
                     onClick={() => setPriceDifference(Math.max(0, priceDifference - 100))}
