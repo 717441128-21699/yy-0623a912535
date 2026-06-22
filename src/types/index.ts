@@ -57,6 +57,7 @@ export interface VerifyOrder {
   needDoctorConfirm: boolean;
   doctorSignature?: string;
   doctorConfirmTime?: string;
+  rejectReason?: string;
 }
 
 export interface FollowUpItem {
@@ -76,6 +77,7 @@ export interface FollowUpItem {
   historicalConsumption?: number;
   refundAmount?: number;
   suggestedItems?: string[];
+  relatedCouponId?: string;
 }
 
 export interface DailyPerformance {

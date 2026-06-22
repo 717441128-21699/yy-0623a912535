@@ -1,15 +1,24 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   MapPin, Syringe, Stethoscope, Plus, Minus,
   ArrowUpRight, CreditCard, ShieldCheck, CheckCircle2,
-  Ticket, AlertCircle
+  Ticket, AlertCircle, ArrowLeft, Sparkles, Calendar, Clock,
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SignaturePad from '../components/SignaturePad';
 import { useAppStore } from '../store/appStore';
 import { treatmentParts, dosageOptions, paymentMethods } from '../data/mockData';
 import type { VerifyOrder } from '@/types';
+
+function needsDoctorConfirm(couponName: string): boolean {
+  const keywords = [
+    '注射', '玻尿', '肉毒', '水光', '动能素',
+    '光子', '光电', '超声', '热玛吉', '热拉提',
+    '线雕', '射频', '激光', '点阵',
+  ];
+  return keywords.some((kw) => couponName.includes(kw));
+}
 
 export default function VerifyApply() {
   const { customerId = '' } = useParams();
@@ -21,22 +30,35 @@ export default function VerifyApply() {
     consultant,
     doctors,
     addVerifyOrder,
+    decreaseCouponCount,
+    addDailyPerformance,
+    generateReturnVisit,
+    addFollowUpItem,
+    clearCouponSelection,
   } = useAppStore();
 
   const customer = getCustomerById(customerId);
   const selectedCoupons = coupons.filter((c) => selectedCouponIds.includes(c.id));
 
+  const hasAnyCoupon = selectedCoupons.length > 0;
+  const autoNeedDoctorConfirm = hasAnyCoupon && selectedCoupons.some((c) => needsDoctorConfirm(c.name));
+
   const [treatmentPartsSelected, setTreatmentPartsSelected] = useState<string[]>([]);
   const [dosage, setDosage] = useState('标准剂量');
   const [doctorId, setDoctorId] = useState('');
   const [signature, setSignature] = useState('');
-  const [needDoctorConfirm, setNeedDoctorConfirm] = useState(true);
+  const [needDoctorConfirm, setNeedDoctorConfirm] = useState(autoNeedDoctorConfirm);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [originalProject, setOriginalProject] = useState('');
   const [upgradedProject, setUpgradedProject] = useState('');
   const [priceDifference, setPriceDifference] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
+  const [returnVisitId, setReturnVisitId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setNeedDoctorConfirm(autoNeedDoctorConfirm);
+  }, [autoNeedDoctorConfirm]);
 
   const togglePart = (part: string) => {
     setTreatmentPartsSelected((prev) =>
@@ -45,7 +67,11 @@ export default function VerifyApply() {
   };
 
   const handleSubmit = () => {
+    if (!hasAnyCoupon) return;
+
     const selectedDoctor = doctors.find((d) => d.id === doctorId);
+    let totalAmount = 0;
+
     selectedCoupons.forEach((coupon) => {
       const order: VerifyOrder = {
         id: `v${Date.now()}${Math.random().toString(36).slice(2, 6)}`,
@@ -68,15 +94,40 @@ export default function VerifyApply() {
         needDoctorConfirm,
       };
       addVerifyOrder(order);
+
+      if (!needDoctorConfirm) {
+        decreaseCouponCount(coupon.id);
+        totalAmount += coupon.faceValue + priceDifference;
+
+        const returnVisit = generateReturnVisit(coupon.id, customerId);
+        if (returnVisit) {
+          addFollowUpItem(returnVisit);
+          if (!returnVisitId) setReturnVisitId(returnVisit.id);
+        }
+      }
     });
+
+    if (!needDoctorConfirm && totalAmount > 0) {
+      addDailyPerformance(totalAmount, selectedCoupons.length);
+    }
+
     setShowSuccess(true);
   };
 
   const canSubmit =
+    hasAnyCoupon &&
     treatmentPartsSelected.length > 0 &&
     doctorId &&
     signature &&
     (!showUpgrade || (originalProject && upgradedProject && priceDifference > 0 && paymentMethod));
+
+  const handleViewReturnVisit = () => {
+    navigate('/follow-up', { state: { highlightId: returnVisitId } });
+  };
+
+  const handleGoSelectCoupon = () => {
+    navigate(`/coupons/${customerId}`);
+  };
 
   if (!customer) {
     return (
@@ -90,7 +141,7 @@ export default function VerifyApply() {
   if (showSuccess) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white flex flex-col items-center justify-center px-6">
-        <div className="animate-[scaleIn_0.5s_ease-out] text-center">
+        <div className="animate-[scaleIn_0.5s_ease-out] text-center w-full max-w-sm">
           <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-lg">
             <CheckCircle2 className="w-12 h-12 text-white" strokeWidth={2.5} />
           </div>
@@ -102,23 +153,84 @@ export default function VerifyApply() {
               ? '已发送至操作医生进行医嘱确认'
               : '卡券已成功核销'}
           </p>
-          <p className="text-xs text-gray-400 mb-8">
-            下次复诊建议已自动生成，可在「跟进」中查看
-          </p>
+
+          {!needDoctorConfirm && (
+            <div className="my-5 p-4 bg-emerald-50 rounded-2xl text-left">
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="w-4 h-4 text-emerald-600" />
+                <span className="text-sm font-semibold text-emerald-800">复诊建议已生成</span>
+              </div>
+              <p className="text-xs text-emerald-700 leading-relaxed">
+                根据您选择的项目类型，已自动生成下次复诊建议，可在「跟进」页面查看详情
+              </p>
+            </div>
+          )}
+
+          {needDoctorConfirm && (
+            <div className="my-5 p-4 bg-amber-50 rounded-2xl text-left">
+              <div className="flex items-center gap-2 mb-2">
+                <Clock className="w-4 h-4 text-amber-600" />
+                <span className="text-sm font-semibold text-amber-800">等待医生确认</span>
+              </div>
+              <p className="text-xs text-amber-700 leading-relaxed">
+                医生签字确认后，卡券将正式核销，同时自动生成复诊建议
+              </p>
+            </div>
+          )}
+
           <div className="space-y-3">
+            {!needDoctorConfirm && (
+              <button
+                onClick={handleViewReturnVisit}
+                className="w-full h-12 bg-gradient-to-r from-brand-purple to-brand-pink text-white font-semibold rounded-2xl shadow-lg flex items-center justify-center gap-2"
+              >
+                <Calendar className="w-4 h-4" />
+                查看复诊建议
+              </button>
+            )}
+            {needDoctorConfirm && (
+              <button
+                onClick={() => navigate('/orders')}
+                className="w-full h-12 bg-gradient-to-r from-brand-purple to-brand-pink text-white font-semibold rounded-2xl shadow-lg flex items-center justify-center gap-2"
+              >
+                查看医嘱确认进度
+              </button>
+            )}
             <button
-              onClick={() => navigate('/follow-up')}
-              className="w-full h-12 bg-gradient-to-r from-brand-purple to-brand-pink text-white font-semibold rounded-2xl shadow-lg"
-            >
-              查看复诊建议
-            </button>
-            <button
-              onClick={() => navigate('/')}
+              onClick={() => {
+                clearCouponSelection();
+                navigate('/');
+              }}
               className="w-full h-12 bg-white text-gray-700 font-semibold rounded-2xl border border-gray-200"
             >
               返回首页
             </button>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasAnyCoupon) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+        <PageHeader title="核销申请" showBack />
+
+        <div className="flex flex-col items-center justify-center px-6 pt-20 pb-10">
+          <div className="w-20 h-20 mb-5 rounded-2xl bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center">
+            <Ticket className="w-10 h-10 text-brand-purple" />
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">暂未选择核销卡券</h2>
+          <p className="text-sm text-gray-500 text-center mb-8 max-w-xs">
+            请先前往卡券推荐页面选择需要核销的卡券，再进行核销操作
+          </p>
+          <button
+            onClick={handleGoSelectCoupon}
+            className="w-full max-w-xs h-12 bg-gradient-to-r from-brand-purple to-brand-pink text-white font-semibold rounded-2xl shadow-lg flex items-center justify-center gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            去选择卡券
+          </button>
         </div>
       </div>
     );
@@ -133,6 +245,15 @@ export default function VerifyApply() {
       />
 
       <div className="px-4 pt-4 space-y-4">
+        {autoNeedDoctorConfirm && (
+          <div className="p-3 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl flex items-start gap-2 border border-purple-100">
+            <Sparkles className="w-4 h-4 text-brand-purple flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-purple-700 leading-relaxed">
+              根据您选择的项目类型，系统已自动开启医生医嘱确认
+            </p>
+          </div>
+        )}
+
         <div className="p-4 bg-white rounded-2xl shadow-card space-y-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
             <Ticket className="w-4 h-4 text-brand-purple" />
@@ -140,12 +261,19 @@ export default function VerifyApply() {
           </div>
           {selectedCoupons.map((coupon) => (
             <div key={coupon.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-              <div className="w-1.5 h-10 rounded-full bg-gradient-to-b from-brand-purple to-brand-pink" />
+              <div className="w-1.5 h-12 rounded-full bg-gradient-to-b from-brand-purple to-brand-pink" />
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-gray-900 truncate">{coupon.name}</div>
                 <div className="text-xs text-gray-500 mt-0.5">
                   剩余 {coupon.remainingCount} 次 · 有效期至 {coupon.expireDate}
                 </div>
+                {needsDoctorConfirm(coupon.name) && (
+                  <div className="mt-1">
+                    <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 text-[10px] rounded">
+                      需医生确认
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="text-brand-purple font-semibold">
                 ¥{coupon.faceValue.toLocaleString()}
@@ -356,7 +484,9 @@ export default function VerifyApply() {
               </div>
               <div>
                 <div className="text-sm font-medium text-gray-900">需要医生医嘱确认</div>
-                <div className="text-xs text-gray-500 mt-0.5">注射、光电类项目建议开启</div>
+                <div className="text-xs text-gray-500 mt-0.5">
+                  {autoNeedDoctorConfirm ? '当前项目建议开启' : '注射、光电类项目建议开启'}
+                </div>
               </div>
             </div>
             <button

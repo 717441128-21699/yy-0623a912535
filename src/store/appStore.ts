@@ -8,6 +8,7 @@ import type {
   ProjectConsumption,
   Consultant,
   Doctor,
+  CouponType,
 } from '@/types';
 import {
   mockCustomers,
@@ -19,6 +20,42 @@ import {
   mockConsultant,
   mockDoctors,
 } from '../data/mockData';
+
+const returnVisitRules: Record<
+  CouponType,
+  { days: number; title: string; content: string; suggestedItems: string[] }
+> = {
+  project_card: {
+    days: 30,
+    title: '项目治疗复诊提醒',
+    content: '治疗后30天建议复诊，评估治疗效果，根据恢复情况调整后续方案',
+    suggestedItems: ['效果评估', '后续治疗方案制定'],
+  },
+  activity_coupon: {
+    days: 15,
+    title: '活动项目复诊提醒',
+    content: '项目治疗后15天复诊，观察术后反应，及时处理任何不适症状',
+    suggestedItems: ['术后复查', '修复护理指导'],
+  },
+  birthday_coupon: {
+    days: 21,
+    title: '生日专享项目复诊',
+    content: '生日专享项目治疗后建议3周复诊，确保效果达到预期',
+    suggestedItems: ['效果确认', '生日专属护理'],
+  },
+  treatment_course: {
+    days: 28,
+    title: '疗程治疗复诊提醒',
+    content: '本次疗程治疗后28天进行下次治疗，请提前预约安排时间',
+    suggestedItems: ['下一次疗程治疗', '疗程进度评估'],
+  },
+};
+
+function addDays(dateStr: string, days: number): string {
+  const date = new Date(dateStr);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
 
 interface AppState {
   consultant: Consultant;
@@ -41,8 +78,21 @@ interface AppState {
   getCouponsByCustomerId: (customerId: string) => Coupon[];
   getFilteredCustomers: () => Customer[];
   addVerifyOrder: (order: VerifyOrder) => void;
-  updateVerifyOrderStatus: (orderId: string, status: VerifyOrder['status'], doctorSignature?: string) => void;
+  updateVerifyOrderStatus: (
+    orderId: string,
+    status: VerifyOrder['status'],
+    options?: { doctorSignature?: string; rejectReason?: string }
+  ) => void;
   updateFollowUpStatus: (itemId: string, status: FollowUpItem['status']) => void;
+  addFollowUpItem: (item: FollowUpItem) => void;
+  decreaseCouponCount: (couponId: string) => void;
+  addDailyPerformance: (amount: number, count: number) => void;
+  generateReturnVisit: (couponId: string, customerId: string) => FollowUpItem | null;
+  getPendingVerifyCount: () => number;
+  getPendingFollowUpCount: () => number;
+  getMonthlyStats: () => { verifyCount: number; consumeAmount: number; repurchaseRate: number; refundRisk: number };
+  resetCouponSelection: () => void;
+  resubmitVerifyOrder: (orderId: string, updates: Partial<VerifyOrder>) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -71,6 +121,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   clearCouponSelection: () => set({ selectedCouponIds: [] }),
 
+  resetCouponSelection: () => set({ selectedCouponIds: [], selectedCustomerId: null }),
+
   getCustomerById: (id) => get().customers.find((c) => c.id === id),
 
   getCouponsByCustomerId: (customerId) =>
@@ -93,15 +145,34 @@ export const useAppStore = create<AppState>((set, get) => ({
       verifyOrders: [order, ...state.verifyOrders],
     })),
 
-  updateVerifyOrderStatus: (orderId, status, doctorSignature) =>
+  updateVerifyOrderStatus: (orderId, status, options) =>
     set((state) => ({
       verifyOrders: state.verifyOrders.map((order) =>
         order.id === orderId
           ? {
               ...order,
               status,
-              doctorSignature: doctorSignature || order.doctorSignature,
-              doctorConfirmTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
+              doctorSignature: options?.doctorSignature || order.doctorSignature,
+              doctorConfirmTime: status === 'success' || status === 'failed'
+                ? new Date().toISOString().replace('T', ' ').slice(0, 19)
+                : order.doctorConfirmTime,
+              rejectReason: options?.rejectReason,
+            }
+          : order
+      ),
+    })),
+
+  resubmitVerifyOrder: (orderId, updates) =>
+    set((state) => ({
+      verifyOrders: state.verifyOrders.map((order) =>
+        order.id === orderId
+          ? {
+              ...order,
+              ...updates,
+              status: 'pending_doctor' as const,
+              doctorSignature: undefined,
+              doctorConfirmTime: undefined,
+              rejectReason: undefined,
             }
           : order
       ),
@@ -113,4 +184,88 @@ export const useAppStore = create<AppState>((set, get) => ({
         item.id === itemId ? { ...item, status } : item
       ),
     })),
+
+  addFollowUpItem: (item) =>
+    set((state) => ({
+      followUpItems: [item, ...state.followUpItems],
+    })),
+
+  decreaseCouponCount: (couponId) =>
+    set((state) => ({
+      coupons: state.coupons.map((coupon) =>
+        coupon.id === couponId
+          ? { ...coupon, remainingCount: Math.max(0, coupon.remainingCount - 1) }
+          : coupon
+      ),
+    })),
+
+  addDailyPerformance: (amount, count) =>
+    set((state) => {
+      const today = new Date();
+      const todayStr = `${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}`;
+      const lastItem = state.dailyPerformance[state.dailyPerformance.length - 1];
+      if (lastItem && lastItem.date === todayStr) {
+        return {
+          dailyPerformance: state.dailyPerformance.map((item, index) =>
+            index === state.dailyPerformance.length - 1
+              ? {
+                  ...item,
+                  verifyCount: item.verifyCount + count,
+                  consumeAmount: item.consumeAmount + amount,
+                }
+              : item
+          ),
+        };
+      }
+      return {
+        dailyPerformance: [
+          ...state.dailyPerformance,
+          { date: todayStr, verifyCount: count, consumeAmount: amount },
+        ],
+      };
+    }),
+
+  generateReturnVisit: (couponId, customerId) => {
+    const { coupons, customers } = get();
+    const coupon = coupons.find((c) => c.id === couponId);
+    const customer = customers.find((c) => c.id === customerId);
+    if (!coupon || !customer) return null;
+
+    const rule = returnVisitRules[coupon.type];
+    const today = new Date().toISOString().slice(0, 10);
+
+    return {
+      id: `f${Date.now()}${Math.random().toString(36).slice(2, 6)}`,
+      customerId,
+      customerName: customer.name,
+      customerAvatar: customer.avatar,
+      type: 'return_visit' as const,
+      title: rule.title,
+      content: rule.content,
+      suggestNextVisit: addDays(today, rule.days),
+      priority: 3 as const,
+      status: 'pending' as const,
+      createdAt: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      suggestedItems: rule.suggestedItems,
+      relatedCouponId: couponId,
+    };
+  },
+
+  getPendingVerifyCount: () =>
+    get().verifyOrders.filter((o) => o.status === 'pending_doctor').length,
+
+  getPendingFollowUpCount: () =>
+    get().followUpItems.filter((f) => f.status === 'pending').length,
+
+  getMonthlyStats: () => {
+    const { dailyPerformance, followUpItems } = get();
+    const verifyCount = dailyPerformance.reduce((sum, d) => sum + d.verifyCount, 0);
+    const consumeAmount = dailyPerformance.reduce((sum, d) => sum + d.consumeAmount, 0);
+    const refundRisk = followUpItems
+      .filter((f) => f.type === 'refund_risk' && f.refundAmount)
+      .reduce((sum, f) => sum + (f.refundAmount || 0), 0);
+    const repurchaseRate = 68;
+
+    return { verifyCount, consumeAmount, repurchaseRate, refundRisk };
+  },
 }));

@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Clock, CheckCircle, XCircle, MapPin, Syringe,
-  Stethoscope, User, ChevronRight, AlertCircle
+  Stethoscope, User, ChevronRight, AlertCircle,
+  RotateCcw, FileText, Calendar,
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SignaturePad from '../components/SignaturePad';
@@ -33,16 +35,30 @@ const statusConfig: Record<string, { label: string; color: string; bg: string; i
 };
 
 export default function DoctorOrders() {
-  const { verifyOrders, updateVerifyOrderStatus } = useAppStore();
+  const navigate = useNavigate();
+  const {
+    verifyOrders,
+    updateVerifyOrderStatus,
+    decreaseCouponCount,
+    addDailyPerformance,
+    generateReturnVisit,
+    addFollowUpItem,
+    resubmitVerifyOrder,
+    coupons,
+    customers,
+  } = useAppStore();
   const [activeTab, setActiveTab] = useState<TabKey>('pending');
   const [selectedOrder, setSelectedOrder] = useState<VerifyOrder | null>(null);
   const [doctorSignature, setDoctorSignature] = useState('');
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectInput, setShowRejectInput] = useState(false);
+  const [resubmitMode, setResubmitMode] = useState(false);
+  const [editParts, setEditParts] = useState<string[]>([]);
+  const [editDosage, setEditDosage] = useState('');
 
   const tabs: { key: TabKey; label: string }[] = [
     { key: 'pending', label: '待确认' },
-    { key: 'confirmed', label: '已确认' },
+    { key: 'confirmed', label: '已处理' },
     { key: 'all', label: '全部' },
   ];
 
@@ -53,25 +69,187 @@ export default function DoctorOrders() {
   });
 
   const handleConfirm = () => {
-    if (selectedOrder && doctorSignature) {
-      updateVerifyOrderStatus(selectedOrder.id, 'success', doctorSignature);
-      setSelectedOrder(null);
-      setDoctorSignature('');
+    if (!selectedOrder || !doctorSignature) return;
+
+    updateVerifyOrderStatus(selectedOrder.id, 'success', {
+      doctorSignature,
+    });
+
+    decreaseCouponCount(selectedOrder.couponId);
+
+    const coupon = coupons.find((c) => c.id === selectedOrder.couponId);
+    if (coupon) {
+      const totalAmount = coupon.faceValue + selectedOrder.priceDifference;
+      addDailyPerformance(totalAmount, 1);
+
+      const returnVisit = generateReturnVisit(coupon.id, selectedOrder.customerId);
+      if (returnVisit) {
+        addFollowUpItem(returnVisit);
+      }
     }
+
+    setSelectedOrder(null);
+    setDoctorSignature('');
+    setActiveTab('confirmed');
   };
 
   const handleReject = () => {
-    if (selectedOrder && rejectReason.trim()) {
-      updateVerifyOrderStatus(selectedOrder.id, 'failed');
-      setSelectedOrder(null);
-      setRejectReason('');
-      setShowRejectInput(false);
-    }
+    if (!selectedOrder || !rejectReason.trim()) return;
+    updateVerifyOrderStatus(selectedOrder.id, 'failed', {
+      rejectReason,
+    });
+    setSelectedOrder(null);
+    setRejectReason('');
+    setShowRejectInput(false);
+    setActiveTab('confirmed');
   };
+
+  const handleResubmit = (order: VerifyOrder) => {
+    setSelectedOrder(order);
+    setResubmitMode(true);
+    setEditParts([...order.treatmentParts]);
+    setEditDosage(order.dosageRange);
+  };
+
+  const handleSubmitResubmit = () => {
+    if (!selectedOrder) return;
+    resubmitVerifyOrder(selectedOrder.id, {
+      treatmentParts: editParts,
+      dosageRange: editDosage,
+    });
+    setSelectedOrder(null);
+    setResubmitMode(false);
+    setActiveTab('pending');
+  };
+
+  const toggleEditPart = (part: string) => {
+    setEditParts((prev) =>
+      prev.includes(part) ? prev.filter((p) => p !== part) : [...prev, part]
+    );
+  };
+
+  const treatmentParts = [
+    '额头', '眉骨', '眼周', '泪沟', '苹果肌',
+    '鼻唇沟', '脸颊', '下颌线', '下巴', '颈部',
+    '全面部', 'T区', '鼻翼', '口周',
+  ];
+  const dosageOptions = [
+    '标准剂量', '0.5ml以下', '0.5-1.0ml', '1.0-1.5ml', '1.5-2.0ml', '2.0ml以上',
+  ];
+
+  if (selectedOrder && resubmitMode) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white pb-32">
+        <PageHeader
+          title="重新提交核销"
+          showBack
+          rightSlot={
+            <button
+              onClick={() => {
+                setSelectedOrder(null);
+                setResubmitMode(false);
+              }}
+              className="text-xs text-gray-500"
+            >
+              取消
+            </button>
+          }
+        />
+
+        <div className="px-4 pt-4 space-y-4">
+          <div className="p-4 bg-white rounded-2xl shadow-card">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center">
+                <User className="w-6 h-6 text-brand-purple" />
+              </div>
+              <div>
+                <div className="font-semibold text-gray-900">{selectedOrder.customerName}</div>
+                <div className="text-xs text-gray-500 mt-0.5">{selectedOrder.couponName}</div>
+              </div>
+            </div>
+            <div className="p-3 bg-red-50 rounded-xl border border-red-100">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-xs font-semibold text-red-700 mb-1">驳回原因</div>
+                  <p className="text-xs text-red-600">{selectedOrder.rejectReason}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 bg-white rounded-2xl shadow-card space-y-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+              <MapPin className="w-4 h-4 text-brand-purple" />
+              治疗部位（修改）
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {treatmentParts.map((part) => {
+                const isSelected = editParts.includes(part);
+                return (
+                  <button
+                    key={part}
+                    onClick={() => toggleEditPart(part)}
+                    className={`px-3.5 py-2 rounded-xl text-sm transition-all duration-200 ${
+                      isSelected
+                        ? 'bg-gradient-to-r from-brand-purple to-brand-pink text-white shadow-md'
+                        : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    {part}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="p-4 bg-white rounded-2xl shadow-card space-y-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+              <Syringe className="w-4 h-4 text-brand-purple" />
+              剂量区间（修改）
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {dosageOptions.map((opt) => {
+                const isSelected = editDosage === opt;
+                return (
+                  <button
+                    key={opt}
+                    onClick={() => setEditDosage(opt)}
+                    className={`py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
+                      isSelected
+                        ? 'bg-gradient-to-r from-brand-purple to-brand-pink text-white shadow-md'
+                        : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] bg-white border-t border-gray-100 px-4 py-3 pb-5 z-40">
+          <button
+            onClick={handleSubmitResubmit}
+            disabled={editParts.length === 0 || !editDosage}
+            className={`w-full h-12 font-semibold rounded-2xl transition-all ${
+              editParts.length > 0 && editDosage
+                ? 'bg-gradient-to-r from-brand-purple to-brand-pink text-white shadow-lg'
+                : 'bg-gray-100 text-gray-400'
+            }`}
+          >
+            重新提交
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (selectedOrder) {
     const orderStatus = statusConfig[selectedOrder.status];
     const StatusIcon = orderStatus.icon;
+    const customer = customers.find((c) => c.id === selectedOrder.customerId);
 
     return (
       <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white pb-32">
@@ -84,21 +262,29 @@ export default function DoctorOrders() {
             </span>
           }
         />
-        <div
+        <button
           onClick={() => setSelectedOrder(null)}
           className="px-4 py-3 text-sm text-gray-500 flex items-center gap-1"
         >
           <ChevronRight className="w-4 h-4 rotate-180" />
           返回列表
-        </div>
+        </button>
 
         <div className="px-4 space-y-4">
           <div className="p-4 bg-white rounded-2xl shadow-card">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center">
-                <User className="w-6 h-6 text-brand-purple" />
-              </div>
-              <div>
+              {customer?.avatar ? (
+                <img
+                  src={customer.avatar}
+                  alt={selectedOrder.customerName}
+                  className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-100 to-pink-100"
+                />
+              ) : (
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center">
+                  <User className="w-6 h-6 text-brand-purple" />
+                </div>
+              )}
+              <div className="flex-1">
                 <div className="font-semibold text-gray-900">{selectedOrder.customerName}</div>
                 <div className="text-xs text-gray-500 mt-0.5">申请时间：{selectedOrder.createTime}</div>
               </div>
@@ -108,6 +294,16 @@ export default function DoctorOrders() {
               <div className="text-xs text-gray-500 mt-1">咨询师：{selectedOrder.consultantName}</div>
             </div>
           </div>
+
+          {selectedOrder.rejectReason && (
+            <div className="p-4 bg-white rounded-2xl shadow-card border-l-4 border-red-400">
+              <div className="flex items-center gap-2 mb-2">
+                <XCircle className="w-4 h-4 text-red-500" />
+                <span className="text-sm font-semibold text-red-700">驳回原因</span>
+              </div>
+              <p className="text-sm text-gray-700 leading-relaxed">{selectedOrder.rejectReason}</p>
+            </div>
+          )}
 
           <div className="p-4 bg-white rounded-2xl shadow-card space-y-4">
             <div className="flex items-start gap-3">
@@ -143,7 +339,10 @@ export default function DoctorOrders() {
 
           {selectedOrder.priceDifference > 0 && (
             <div className="p-4 bg-white rounded-2xl shadow-card">
-              <div className="text-sm font-semibold text-gray-900 mb-3">项目升级补差价</div>
+              <div className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-brand-purple" />
+                项目升级补差价
+              </div>
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <div className="text-xs text-gray-500 mb-1">原项目</div>
@@ -156,7 +355,21 @@ export default function DoctorOrders() {
               </div>
               <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
                 <span className="text-sm text-gray-500">补差价金额</span>
-                <span className="text-lg font-bold text-brand-purple">¥{selectedOrder.priceDifference.toLocaleString()}</span>
+                <span className="text-lg font-bold text-brand-purple">
+                  ¥{selectedOrder.priceDifference.toLocaleString()}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {selectedOrder.status === 'success' && selectedOrder.doctorSignature && (
+            <div className="p-4 bg-white rounded-2xl shadow-card">
+              <div className="flex items-center gap-2 mb-3">
+                <Calendar className="w-4 h-4 text-emerald-500" />
+                <span className="text-sm font-semibold text-gray-900">医生确认签字</span>
+              </div>
+              <div className="h-20 bg-gray-50 rounded-xl flex items-center justify-center">
+                <span className="text-xs text-gray-400">医生签字已确认 · {selectedOrder.doctorConfirmTime}</span>
               </div>
             </div>
           )}
@@ -202,6 +415,16 @@ export default function DoctorOrders() {
                 </div>
               ) : null}
             </>
+          )}
+
+          {selectedOrder.status === 'failed' && (
+            <button
+              onClick={() => handleResubmit(selectedOrder)}
+              className="w-full h-12 bg-gradient-to-r from-brand-purple to-brand-pink text-white font-semibold rounded-2xl shadow-lg flex items-center justify-center gap-2"
+            >
+              <RotateCcw className="w-4 h-4" />
+              修改后重新提交
+            </button>
           )}
         </div>
 
@@ -276,8 +499,12 @@ export default function DoctorOrders() {
                   key={order.id}
                   onClick={() => setSelectedOrder(order)}
                   style={{ animationDelay: `${index * 50}ms` }}
-                  className="animate-[fadeInUp_0.4s_ease-out_both] p-4 bg-white rounded-2xl shadow-card hover:shadow-lg transition-all cursor-pointer active:scale-[0.99]"
+                  className="animate-[fadeInUp_0.4s_ease-out_both] p-4 bg-white rounded-2xl shadow-card hover:shadow-lg transition-all cursor-pointer active:scale-[0.99] relative overflow-hidden"
                 >
+                  {order.status === 'failed' && (
+                    <div className="absolute top-0 left-0 right-0 h-1 bg-red-400" />
+                  )}
+
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex-1">
                       <div className="font-semibold text-gray-900">{order.customerName}</div>
@@ -289,8 +516,8 @@ export default function DoctorOrders() {
                     </span>
                   </div>
                   <div className="p-3 bg-gray-50 rounded-xl">
-                    <div className="text-sm font-medium text-gray-900 mb-2">{order.couponName}</div>
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="text-sm font-medium text-gray-900 mb-2 truncate">{order.couponName}</div>
+                    <div className="flex flex-wrap gap-1.5 mb-2">
                       {order.treatmentParts.slice(0, 3).map((part) => (
                         <span key={part} className="px-2 py-0.5 bg-white text-gray-600 text-[11px] rounded">
                           {part}
@@ -302,7 +529,7 @@ export default function DoctorOrders() {
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-200">
+                    <div className="flex items-center justify-between pt-2 border-t border-gray-200">
                       <span className="text-xs text-gray-500">操作医生：{order.operatingDoctor}</span>
                       <span className="text-xs text-brand-purple font-medium flex items-center gap-0.5">
                         查看详情
@@ -310,6 +537,13 @@ export default function DoctorOrders() {
                       </span>
                     </div>
                   </div>
+
+                  {order.rejectReason && (
+                    <div className="mt-3 p-2.5 bg-red-50 rounded-xl flex items-start gap-2">
+                      <AlertCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />
+                      <p className="text-xs text-red-600 line-clamp-2">{order.rejectReason}</p>
+                    </div>
+                  )}
                 </div>
               );
             })}
