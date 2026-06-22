@@ -84,12 +84,28 @@ export interface FollowUpItem {
   priority: 1 | 2 | 3;
   status: 'pending' | 'processing' | 'done';
   createdAt: string;
+  updatedAt?: string;
+  remark?: string;
   stayDuration?: string;
   consultedProject?: string;
   historicalConsumption?: number;
   refundAmount?: number;
   suggestedItems?: string[];
   relatedCouponId?: string;
+  relatedVerifyOrderId?: string;
+}
+
+export type TimelineEventType = 'verify' | 'doctor_confirm' | 'return_visit' | 'follow_up';
+
+export interface TimelineEvent {
+  id: string;
+  type: TimelineEventType;
+  time: string;
+  title: string;
+  description: string;
+  relatedId?: string;
+  relatedType?: 'verify' | 'follow_up';
+  amount?: number;
 }
 
 export interface DailyPerformance {

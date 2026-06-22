@@ -10,6 +10,7 @@ import type {
   Doctor,
   CouponType,
   ModificationRecord,
+  TimelineEvent,
 } from '@/types';
 import {
   mockCustomers,
@@ -114,6 +115,9 @@ interface AppState {
   getActiveRefundRiskCount: () => number;
   getActiveFollowUpCount: () => number;
   getActiveNoVerifyCount: () => number;
+  updateFollowUpItem: (itemId: string, updates: Partial<FollowUpItem>) => void;
+  getCustomerTimeline: (customerId: string) => TimelineEvent[];
+  generateReturnVisitFromOrder: (order: VerifyOrder) => FollowUpItem | null;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -347,5 +351,128 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   getActiveNoVerifyCount: () => {
     return get().followUpItems.filter((f) => f.type === 'no_verify' && f.status !== 'done').length;
+  },
+
+  updateFollowUpItem: (itemId, updates) =>
+    set((state) => ({
+      followUpItems: state.followUpItems.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              ...updates,
+              updatedAt: new Date().toISOString().replace('T', ' ').slice(0, 19),
+            }
+          : item
+      ),
+    })),
+
+  getCustomerTimeline: (customerId) => {
+    const { verifyOrders, followUpItems } = get();
+    const events: TimelineEvent[] = [];
+
+    verifyOrders
+      .filter((o) => o.customerId === customerId)
+      .forEach((order) => {
+        events.push({
+          id: `t-verify-${order.id}`,
+          type: 'verify',
+          time: order.createTime,
+          title: '卡券核销',
+          description: `${order.couponName} · ¥${order.couponFaceValue.toLocaleString()}${
+            order.priceDifference > 0 ? `（含补差 ¥${order.priceDifference}）` : ''
+          }`,
+          relatedId: order.id,
+          relatedType: 'verify',
+          amount: order.couponFaceValue + order.priceDifference,
+        });
+
+        if (order.needDoctorConfirm && order.status === 'success' && order.doctorConfirmTime) {
+          events.push({
+            id: `t-doctor-${order.id}`,
+            type: 'doctor_confirm',
+            time: order.doctorConfirmTime,
+            title: '医生确认通过',
+            description: `操作医生：${order.operatingDoctor || '未填写'}`,
+            relatedId: order.id,
+            relatedType: 'verify',
+          });
+        }
+        if (order.status === 'failed' && order.rejectReason) {
+          events.push({
+            id: `t-reject-${order.id}`,
+            type: 'doctor_confirm',
+            time: order.createTime,
+            title: '医生驳回',
+            description: `驳回原因：${order.rejectReason}`,
+            relatedId: order.id,
+            relatedType: 'verify',
+          });
+        }
+      });
+
+    followUpItems
+      .filter((f) => f.customerId === customerId)
+      .forEach((item) => {
+        if (item.type === 'return_visit') {
+          events.push({
+            id: `t-rv-${item.id}`,
+            type: 'return_visit',
+            time: item.createdAt,
+            title: '复诊建议生成',
+            description: `${item.title}${item.suggestNextVisit ? ` · 建议复诊：${item.suggestNextVisit}` : ''}${
+              item.remark ? ` · 备注：${item.remark}` : ''
+            }`,
+            relatedId: item.id,
+            relatedType: 'follow_up',
+          });
+        } else {
+          const typeLabel: Record<string, string> = {
+            no_verify: '到院未核销跟进',
+            repurchase: '复购跟进',
+            refund_risk: '退款风险跟进',
+          };
+          events.push({
+            id: `t-fu-${item.id}`,
+            type: 'follow_up',
+            time: item.createdAt,
+            title: typeLabel[item.type] || '跟进',
+            description: `${item.content}${
+              item.status === 'done' ? '（已完成）' : item.status === 'processing' ? '（跟进中）' : ''
+            }`,
+            relatedId: item.id,
+            relatedType: 'follow_up',
+          });
+        }
+      });
+
+    return events.sort((a, b) => (a.time < b.time ? 1 : -1));
+  },
+
+  generateReturnVisitFromOrder: (order) => {
+    const { customers, coupons } = get();
+    const customer = customers.find((c) => c.id === order.customerId);
+    if (!customer) return null;
+
+    const coupon = coupons.find((c) => c.id === order.couponId);
+    const couponType: CouponType = coupon?.type || 'project_card';
+    const rule = returnVisitRules[couponType] || returnVisitRules.project_card;
+    const today = new Date().toISOString().slice(0, 10);
+
+    return {
+      id: `f${Date.now()}${Math.random().toString(36).slice(2, 6)}`,
+      customerId: order.customerId,
+      customerName: order.customerName,
+      customerAvatar: customer.avatar,
+      type: 'return_visit' as const,
+      title: rule.title,
+      content: rule.content,
+      suggestNextVisit: addDays(today, rule.days),
+      priority: 3 as const,
+      status: 'pending' as const,
+      createdAt: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      suggestedItems: rule.suggestedItems,
+      relatedCouponId: order.couponId,
+      relatedVerifyOrderId: order.id,
+    };
   },
 }));

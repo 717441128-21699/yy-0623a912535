@@ -14,7 +14,7 @@ export default function TabBar() {
     (s) => s.verifyOrders.filter((o) => o.status === 'pending_doctor').length
   );
   const pendingFollowCount = useAppStore(
-    (s) => s.followUpItems.filter((f) => f.status === 'pending').length
+    (s) => s.followUpItems.filter((f) => f.status !== 'done').length
   );
 
   const getBadge = (path: string) => {

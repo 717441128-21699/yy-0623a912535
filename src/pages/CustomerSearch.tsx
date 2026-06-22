@@ -22,6 +22,10 @@ export default function CustomerSearch() {
   const noVerifyCount = getActiveNoVerifyCount();
 
   const handleCustomerClick = (customerId: string) => {
+    navigate(`/customer/${customerId}`);
+  };
+
+  const handleVerifyClick = (customerId: string) => {
     navigate(`/coupons/${customerId}`);
   };
 
@@ -195,6 +199,7 @@ export default function CustomerSearch() {
                   <CustomerCard
                     customer={customer}
                     onClick={() => handleCustomerClick(customer.id)}
+                    onVerifyClick={() => handleVerifyClick(customer.id)}
                   />
                 </div>
               ))}

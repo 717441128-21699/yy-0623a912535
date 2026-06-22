@@ -4,7 +4,7 @@ import {
   AlertTriangle, ShoppingBag, Calendar, Users,
   Clock, ChevronRight, Phone, MessageCircle,
   TrendingUp, CheckCircle2, Ticket,
-  XCircle, Star, Zap,
+  XCircle, Star, Zap, X, Edit2,
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import TabBar from '../components/TabBar';
@@ -76,6 +76,7 @@ export default function FollowUp() {
     followUpItems,
     updateFollowUpStatus,
     setSelectedCustomerId,
+    updateFollowUpItem,
   } = useAppStore();
 
   const locationState = location.state as { highlightId?: string; highlightType?: FollowUpType } | null;
@@ -89,6 +90,10 @@ export default function FollowUp() {
   );
   const highlightRef = useRef<HTMLDivElement>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  const [editingItem, setEditingItem] = useState<FollowUpItem | null>(null);
+  const [editNextDate, setEditNextDate] = useState('');
+  const [editRemark, setEditRemark] = useState('');
 
   useEffect(() => {
     if (highlightId && highlightRef.current) {
@@ -117,7 +122,7 @@ export default function FollowUp() {
 
   const stats = {
     total: followUpItems.length,
-    pending: followUpItems.filter((f) => f.status === 'pending').length,
+    pending: followUpItems.filter((f) => f.status !== 'done').length,
     refundRisk: followUpItems.filter((f) => f.type === 'refund_risk' && f.status !== 'done').length,
     noVerify: followUpItems.filter((f) => f.type === 'no_verify' && f.status !== 'done').length,
     repurchase: followUpItems.filter((f) => f.type === 'repurchase' && f.status !== 'done').length,
@@ -126,6 +131,26 @@ export default function FollowUp() {
   const handleGoCoupons = (customerId: string) => {
     setSelectedCustomerId(customerId);
     navigate(`/coupons/${customerId}`);
+  };
+
+  const handleGoCustomerDetail = (customerId: string) => {
+    navigate(`/customer/${customerId}`);
+  };
+
+  const handleOpenEditReturnVisit = (e: React.MouseEvent, item: FollowUpItem) => {
+    e.stopPropagation();
+    setEditingItem(item);
+    setEditNextDate(item.suggestNextVisit || '');
+    setEditRemark(item.remark || '');
+  };
+
+  const handleSaveEditReturnVisit = () => {
+    if (!editingItem) return;
+    updateFollowUpItem(editingItem.id, {
+      suggestNextVisit: editNextDate || undefined,
+      remark: editRemark.trim() || undefined,
+    });
+    setEditingItem(null);
   };
 
   const handleStartFollow = (itemId: string) => {
@@ -229,6 +254,16 @@ export default function FollowUp() {
     if (item.type === 'return_visit') {
       return (
         <>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenEditReturnVisit(e, item);
+            }}
+            className="flex-1 h-9 flex items-center justify-center gap-1.5 bg-white text-emerald-600 border border-emerald-200 text-xs font-medium rounded-xl hover:bg-emerald-50"
+          >
+            <Edit2 className="w-3.5 h-3.5" />
+            改期备注
+          </button>
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -344,7 +379,7 @@ export default function FollowUp() {
                 <div
                   key={item.id}
                   ref={isHighlighted ? highlightRef : undefined}
-                  onClick={() => handleGoCoupons(item.customerId)}
+                  onClick={() => handleGoCustomerDetail(item.customerId)}
                   style={{ animationDelay: `${index * 50}ms` }}
                   className={`animate-[fadeInUp_0.4s_ease-out_both] relative overflow-hidden rounded-2xl transition-all hover:shadow-lg cursor-pointer ${
                     isHighlighted
@@ -456,12 +491,21 @@ export default function FollowUp() {
                     )}
 
                     {item.suggestNextVisit && (
-                      <div className="p-2.5 bg-emerald-50 rounded-xl mb-3 flex items-center gap-2">
+                      <div className="p-2.5 bg-emerald-50 rounded-xl mb-2 flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-emerald-500 flex-shrink-0" />
                         <span className="text-xs text-emerald-700">
                           建议复诊：
                           <span className="font-semibold ml-1">{item.suggestNextVisit}</span>
                         </span>
+                      </div>
+                    )}
+
+                    {item.remark && (
+                      <div className="p-2.5 bg-blue-50 rounded-xl mb-3 flex items-start gap-2">
+                        <MessageCircle className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
+                        <div className="text-xs text-blue-700 leading-relaxed">
+                          <span className="font-semibold">备注：</span>{item.remark}
+                        </div>
                       </div>
                     )}
 
@@ -488,6 +532,78 @@ export default function FollowUp() {
           </div>
         )}
       </div>
+
+      {editingItem && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setEditingItem(null)} />
+          <div className="relative w-full max-w-[480px] bg-white rounded-t-3xl animate-[fadeInUp_0.3s_ease-out]">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-base font-bold text-gray-900">复诊改期 & 备注</h3>
+              <button
+                onClick={() => setEditingItem(null)}
+                className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center"
+              >
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                <img
+                  src={editingItem.customerAvatar}
+                  alt={editingItem.customerName}
+                  className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-100 to-teal-100"
+                />
+                <div>
+                  <div className="text-sm font-semibold text-gray-900">{editingItem.customerName}</div>
+                  <div className="text-xs text-emerald-600">{editingItem.title}</div>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-500 mb-1.5 block flex items-center gap-1">
+                  <Calendar className="w-3 h-3" />
+                  下次复诊日期
+                </label>
+                <input
+                  type="date"
+                  value={editNextDate}
+                  onChange={(e) => setEditNextDate(e.target.value)}
+                  className="w-full h-11 px-3 bg-gray-50 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-purple"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-500 mb-1.5 block flex items-center gap-1">
+                  <MessageCircle className="w-3 h-3" />
+                  沟通记录 / 备注
+                </label>
+                <textarea
+                  value={editRemark}
+                  onChange={(e) => setEditRemark(e.target.value)}
+                  placeholder="记录顾客反馈、预约调整原因等沟通内容..."
+                  rows={4}
+                  className="w-full px-3 py-2.5 bg-gray-50 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-purple resize-none"
+                />
+              </div>
+            </div>
+            <div className="p-4 pb-6 flex gap-2 border-t border-gray-100">
+              <button
+                onClick={() => setEditingItem(null)}
+                className="flex-1 h-12 bg-white text-gray-700 font-semibold rounded-2xl border border-gray-200"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveEditReturnVisit}
+                className="flex-[2] h-12 bg-gradient-to-r from-brand-purple to-brand-pink text-white font-semibold rounded-2xl shadow-lg flex items-center justify-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <TabBar />
     </div>

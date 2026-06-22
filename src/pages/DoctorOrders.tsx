@@ -41,7 +41,7 @@ export default function DoctorOrders() {
     updateVerifyOrderStatus,
     decreaseCouponCount,
     addDailyPerformance,
-    generateReturnVisit,
+    generateReturnVisitFromOrder,
     addFollowUpItem,
     resubmitVerifyOrder,
     markOrderReturnVisit,
@@ -80,16 +80,13 @@ export default function DoctorOrders() {
 
     decreaseCouponCount(selectedOrder.couponId);
 
-    const coupon = coupons.find((c) => c.id === selectedOrder.couponId);
-    if (coupon) {
-      const totalAmount = coupon.faceValue + selectedOrder.priceDifference;
-      addDailyPerformance(totalAmount, 1);
+    const totalAmount = selectedOrder.couponFaceValue + selectedOrder.priceDifference;
+    addDailyPerformance(totalAmount, 1);
 
-      const returnVisit = generateReturnVisit(coupon.id, selectedOrder.customerId);
-      if (returnVisit) {
-        addFollowUpItem(returnVisit);
-        setConfirmReturnVisitId(returnVisit.id);
-      }
+    const returnVisit = generateReturnVisitFromOrder(selectedOrder);
+    if (returnVisit) {
+      addFollowUpItem(returnVisit);
+      setConfirmReturnVisitId(returnVisit.id);
     }
 
     markOrderReturnVisit(selectedOrder.id);
