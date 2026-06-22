@@ -35,6 +35,7 @@ export default function VerifyApply() {
     generateReturnVisit,
     addFollowUpItem,
     clearCouponSelection,
+    markOrderReturnVisit,
   } = useAppStore();
 
   const customer = getCustomerById(customerId);
@@ -76,8 +77,9 @@ export default function VerifyApply() {
 
     selectedCoupons.forEach((coupon, index) => {
       const isFirstInBatch = index === 0;
+      const orderId = `v${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
       const order: VerifyOrder = {
-        id: `v${Date.now()}${Math.random().toString(36).slice(2, 6)}`,
+        id: orderId,
         batchId,
         customerId,
         customerName: customer?.name || '',
@@ -108,6 +110,7 @@ export default function VerifyApply() {
         if (returnVisit) {
           addFollowUpItem(returnVisit);
           if (!firstReturnVisitId) firstReturnVisitId = returnVisit.id;
+          markOrderReturnVisit(orderId);
         }
       }
     });

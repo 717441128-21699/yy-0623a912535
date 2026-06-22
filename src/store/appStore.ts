@@ -195,16 +195,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
         const history: ModificationRecord[] = order.modificationHistory ? [...order.modificationHistory] : [];
 
-        if (updates.treatmentParts) {
+        const oldPartsStr = order.treatmentParts.join('、');
+        const newPartsStr = updates.treatmentParts?.join('、') || '';
+        if (updates.treatmentParts && oldPartsStr !== newPartsStr) {
           history.push({
             time: now,
             field: 'treatmentParts',
-            oldValue: order.treatmentParts.join('、'),
-            newValue: updates.treatmentParts.join('、'),
+            oldValue: oldPartsStr,
+            newValue: newPartsStr,
             rejectReason: order.rejectReason || '',
           });
         }
-        if (updates.dosageRange) {
+        if (updates.dosageRange && updates.dosageRange !== order.dosageRange) {
           history.push({
             time: now,
             field: 'dosageRange',

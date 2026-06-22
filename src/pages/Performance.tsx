@@ -3,6 +3,7 @@ import {
   BarChart3, Wallet, Users, TrendingUp,
   Calendar, ChevronDown, Ticket, ArrowRight,
   FileText, X, CheckCircle2, Clock, Sparkles,
+  AlertCircle, MessageCircle,
 } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis,
@@ -139,14 +140,29 @@ export default function Performance() {
             gradient="bg-gradient-to-br from-amber-500 to-orange-500"
             icon={<Users className="w-5 h-5" />}
           />
-          <StatCard
-            label="退款风险"
-            value={stats.refundRisk}
-            prefix="¥"
-            trend={getActiveRefundRiskCount() > 0 ? -1 : 0}
-            gradient="bg-gradient-to-br from-rose-500 to-pink-600"
-            icon={<BarChart3 className="w-5 h-5" />}
-          />
+          <div className="p-4 rounded-2xl bg-gradient-to-br from-rose-500 to-pink-600 text-white shadow-md relative overflow-hidden">
+            <div className="absolute right-3 top-3 opacity-80">
+              <AlertCircle className="w-8 h-8 text-white/20" />
+            </div>
+            <div className="text-xs text-white/80 mb-1">退款风险金额</div>
+            <div className="flex items-baseline gap-0.5">
+              <span className="text-xs">¥</span>
+              <span className="text-2xl font-bold tracking-tight">
+                {stats.refundRisk.toLocaleString()}
+              </span>
+            </div>
+            <div className="mt-3 pt-3 border-t border-white/20">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1">
+                  <MessageCircle className="w-3.5 h-3.5 text-white/70" />
+                  <span className="text-[11px] text-white/70">待跟进</span>
+                </div>
+                <span className="text-sm font-bold">
+                  {getActiveFollowUpCount()} 位
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="p-4 bg-white rounded-2xl shadow-card">
